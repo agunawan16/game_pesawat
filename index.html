@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Game Pesawat Menembak Sesuai Arah</title>
+  <style>
+    canvas {
+      background: #1d1818;
+      display: block;
+      margin: 20px auto;
+    }
+    #startBtn {
+      display: block;
+      margin: 50px auto 0;
+      padding: 12px 30px;
+      font-size: 18px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+
+<!-- Tombol Mulai -->
+<button id="startBtn" onclick="startGame()">Mulai Game</button>
+
+<!-- Musik latar -->
+<audio id="bgMusic" src="assets/monica.mp3" loop></audio>
+
+<!-- Suara game over -->
+<audio id="gameOverSound" src="assets/soundkalah.mp3"></audio>
+
+<script>
+let myGameArea;
+let player;
+let keys = {};
+let obstacles = [];
+let bullets = [];
+let gameOver = false;
+let bgMusic;
+let gameOverSound;
+
+let obstacleImage = new Image();
+obstacleImage.src = "assets/meteor.png";
+
+function startGame() {
+  document.getElementById("startBtn").style.display = "none";
+
+  bgMusic = document.getElementById("bgMusic");
+  gameOverSound = document.getElementById("gameOverSound");
+
+  bgMusic.volume = 0.5;
+  bgMusic.play().catch(err => console.log("Autoplay diblokir:", err));
+
+  myGameArea = {
+    canvas: document.createElement("canvas"),
+    start: function () {
+      this.canvas.width = 780;
+      this.canvas.height = 470;
+      this.context = this.canvas.getContext("2d");
+      document.body.insertBefore(this.canvas, document.body.childNodes[1]);
+      this.interval = setInterval(updateGameArea, 20);
+
+      window.addEventListener('keydown', function (e) {
+        keys[e.key] = true;
+        if (e.key === " ") fireBullet();
+      });
+      window.addEventListener('keyup', function (e) {
+        keys[e.key] = false;
+      });
+    },
+    clear: function () {
+      this.context.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    },
+    stop: function () {
+      clearInterval(this.interval);
+      bgMusic.pause();
+      bgMusic.currentTime = 0;
+    }
+  };
+
+  const img = new Image();
+  img.src = "assets/pesawat.png";
+  img.onload = function () {
+    player = new component(70, 70, img, myGameArea.canvas.width/2, myGameArea.canvas.height/2);
+    createObstacles();
+    myGameArea.start();
+  };
+}
+
+function component(width, height, image, x, y) {
+  this.width = width;
+  this.height = height;
+  this.image = image;
+  this.angle = 0;
+  this.moveAngle = 0;
+  this.speed = 0;
+  this.x = x;
+  this.y = y;
+
+  this.update = function () {
+    let ctx = myGameArea.context;
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.angle);
+    ctx.drawImage(this.image, this.width / -2, this.height / -2, this.width, this.height);
+    ctx.restore();
+  };
+
+  this.newPos = function () {
+    this.angle += this.moveAngle * Math.PI / 180;
+    this.x += this.speed * Math.sin(this.angle);
+    this.y -= this.speed * Math.cos(this.angle);
+
+    // Batas canvas
+    if (this.x < 0) this.x = 0;
+    if (this.x > myGameArea.canvas.width) this.x = myGameArea.canvas.width;
+    if (this.y < 0) this.y = 0;
+    if (this.y > myGameArea.canvas.height) this.y = myGameArea.canvas.height;
+  };
+
+  this.crashWith = function (obs) {
+    const myLeft = this.x - this.width / 2;
+    const myRight = this.x + this.width / 2;
+    const myTop = this.y - this.height / 2;
+    const myBottom = this.y + this.height / 2;
+
+    const otherLeft = obs.x;
+    const otherRight = obs.x + obs.width;
+    const otherTop = obs.y;
+    const otherBottom = obs.y + obs.height;
+
+    return !(myBottom < otherTop || 
+             myTop > otherBottom || 
+             myRight < otherLeft || 
+             myLeft > otherRight);
+  };
+}
+
+function createObstacles() {
+  for (let i = 0; i < 5; i++) {
+    const x = Math.random() * 500 + 40;
+    const y = Math.random() * -300;
+    obstacles.push({
+      x: x,
+      y: y,
+      width: 30,
+      height: 30,
+      speedY: 2 + Math.random() * 2,
+    });
+  }
+}
+
+function updateObstacles() {
+  let ctx = myGameArea.context;
+  for (let i = obstacles.length - 1; i >= 0; i--) {
+    let obs = obstacles[i];
+    obs.y += obs.speedY;
+
+    if (obs.y > myGameArea.canvas.height) {
+      obs.y = -10;
+      obs.x = Math.random() * (myGameArea.canvas.width - obs.width);
+    }
+
+    ctx.drawImage(obstacleImage, obs.x, obs.y, obs.width, obs.height);
+
+    if (player.crashWith(obs)) {
+      gameOver = true;
+      playGameOverSound();
+    }
+
+    for (let j = bullets.length - 1; j >= 0; j--) {
+      let b = bullets[j];
+      if (
+        b.x > obs.x &&
+        b.x < obs.x + obs.width &&
+        b.y > obs.y &&
+        b.y < obs.y + obs.height
+      ) {
+        obstacles.splice(i, 1);
+        bullets.splice(j, 1);
+        break;
+      }
+    }
+  }
+}
+
+function fireBullet() {
+  if (!player) return;
+  const angle = player.angle;
+  const bulletSpeed = 7;
+  const bullet = {
+    x: player.x,
+    y: player.y,
+    radius: 5,
+    angle: angle,
+    dx: bulletSpeed * Math.sin(angle),
+    dy: -bulletSpeed * Math.cos(angle)
+  };
+  bullets.push(bullet);
+}
+
+function updateBullets() {
+  let ctx = myGameArea.context;
+  for (let i = bullets.length - 1; i >= 0; i--) {
+    let b = bullets[i];
+    b.x += b.dx;
+    b.y += b.dy;
+
+    if (b.x < 0 || b.x > myGameArea.canvas.width || b.y < 0 || b.y > myGameArea.canvas.height) {
+      bullets.splice(i, 1);
+      continue;
+    }
+
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, b.radius, 0, 2 * Math.PI);
+    ctx.fillStyle = "yellow";
+    ctx.fill();
+  }
+}
+
+function drawGameOver() {
+  let ctx = myGameArea.context;
+  ctx.fillStyle = "white";
+  ctx.font = "bold 48px Arial";
+  ctx.textAlign = "center";
+  ctx.fillText("GAME OVER", myGameArea.canvas.width / 2, myGameArea.canvas.height / 2);
+  
+  setTimeout(() => {
+    myGameArea.stop();
+  }, 2000);
+}
+
+function playGameOverSound() {
+  if (gameOverSound) {
+    gameOverSound.play().catch(err => {
+      console.log("Gagal memutar suara game over:", err);
+    });
+  }
+}
+
+function updateGameArea() {
+  if (!player) return;
+
+  myGameArea.clear();
+
+  if (gameOver) {
+    drawGameOver();
+    return;
+  }
+
+  // Kontrol arah
+  player.moveAngle = 0;
+  player.speed = 0;
+  if (keys["ArrowLeft"]) player.moveAngle = -5;
+  if (keys["ArrowRight"]) player.moveAngle = 5;
+  if (keys["ArrowUp"]) player.speed = 4;
+  if (keys["ArrowDown"]) player.speed = -4;
+
+  player.newPos();
+  player.update();
+  updateBullets();
+  updateObstacles();
+}
+</script>
+
+</body>
+</html>
